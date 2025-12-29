@@ -1,4 +1,4 @@
-import cloudinary from '../config/cloudinary';
+import { cloudinary } from '../config/cloudinary';
 
 // Example service method
 export const uploadImage = async (file: any) => {

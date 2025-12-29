@@ -1,7 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import mongoose from 'mongoose';
 import authRoutes from './routes/authRoutes';
 import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
@@ -9,6 +8,7 @@ import cartRoutes from './routes/cartRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import errorHandler from './middleware/errorHandler';
 import './config/database'; // Connects to DB
+import path from 'path';
 
 dotenv.config();
 
@@ -31,3 +31,6 @@ app.get('/api/health', (req, res) => res.send('OK'));
 app.use(errorHandler);
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Uploads folder එක public කිරීම
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

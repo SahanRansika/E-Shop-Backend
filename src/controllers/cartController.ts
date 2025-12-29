@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import Cart from '../models/Cart';
-import { authenticate } from '../middleware/auth';
+import { authenticate } from '../middleware/authMiddleware';
 
 export const addToCart = [authenticate, async (req: any, res: Response) => {
   const { productId, quantity } = req.body;

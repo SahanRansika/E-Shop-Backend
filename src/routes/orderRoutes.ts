@@ -1,9 +1,12 @@
 import express from 'express';
-import { createOrder, getOrders } from '../controllers/orderController';
+import { getSellerOrders, createOrder, getOrders } from '../controllers/orderController';
+import { authenticate } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
+// Seller කෙනෙකුට තමන්ගේ බඩු විකුණුනු ඇණවුම් බැලීමට
+router.get('/seller', getSellerOrders);
 router.post('/', createOrder);
-router.get('/', getOrders);
+router.get('/', authenticate, getOrders);
 
 export default router;
