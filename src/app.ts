@@ -7,16 +7,21 @@ import orderRoutes from './routes/orderRoutes';
 import cartRoutes from './routes/cartRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import errorHandler from './middleware/errorHandler';
-import './config/database'; // Connects to DB
-import path from 'path';
+import './config/database'; 
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000', // ඔබේ Frontend URL එක
+  credentials: true
+}));
 app.use(express.json());
+
+// 🔥 මෙන්න මේ පේළිය අනිවාර්යයෙන්ම එකතු කරන්න:
+app.use(express.urlencoded({ extended: true })); 
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -25,12 +30,8 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/payments', paymentRoutes);
 
-// Health check
 app.get('/api/health', (req, res) => res.send('OK'));
 
 app.use(errorHandler);
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// Uploads folder එක public කිරීම
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

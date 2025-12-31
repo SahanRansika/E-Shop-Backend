@@ -4,24 +4,64 @@ import { payhereConfig } from '../config/payhere';
 import Order from '../models/Order';
 import { sendEmail } from '../services/emailService';
 
-export const initiatePayment = async (req: Request, res: Response) => {
-  const { orderId, amount } = req.body;
-  const hash = crypto.createHash('md5').update(`${payhereConfig.merchantID}${orderId}${amount}LKR${payhereConfig.merchantSecret}`).digest('hex').toUpperCase();
-  res.json({ merchantID: payhereConfig.merchantID, orderId, amount, hash, returnUrl: payhereConfig.returnUrl, cancelUrl: payhereConfig.cancelUrl });
-};
+interface InitiatePaymentBody {
+  orderId: string;
+  amount: number;
+}
 
-export const notify = async (req: Request, res: Response) => {
-  const { order_id, payhere_amount, status_code } = req.body;
+interface NotifyBody {
+  order_id: string;
+  payhere_amount: string;
+  status_code: string;
+}
 
-  if (status_code === '2') { // Paid
-    // Populate user with email
-    const order = await Order.findById(order_id).populate<{ user: { email: string } }>('user', 'email');
+export const initiatePayment = async (req: Request<{}, {}, InitiatePaymentBody>, res: Response) => {
+  try {
+    const { orderId, amount } = req.body;
 
-    if (order && order.user) {
-      await sendEmail(order.user.email, 'Order Paid', 'Your order has been paid successfully!');
+    if (!orderId || !amount) {
+      return res.status(400).json({ error: 'Order ID and amount are required' });
     }
-  }
 
-  res.sendStatus(200);
+    // Sandbox / Live hash
+    const hash = crypto
+      .createHash('md5')
+      .update(`${payhereConfig.merchantID}${orderId}${amount}LKR${payhereConfig.merchantSecret}`)
+      .digest('hex')
+      .toUpperCase();
+
+    res.json({
+      merchantID: payhereConfig.merchantID,
+      orderId,
+      amount,
+      hash,
+      returnUrl: payhereConfig.returnUrl,
+      cancelUrl: payhereConfig.cancelUrl,
+      notifyUrl: payhereConfig.notifyUrl,
+      currency: 'LKR',
+    });
+  } catch (error: any) {
+    console.error('Initiate Payment Error:', error.message);
+    res.status(500).json({ error: 'Failed to initiate payment' });
+  }
 };
 
+export const notify = async (req: Request<{}, {}, NotifyBody>, res: Response) => {
+  try {
+    const { order_id, payhere_amount, status_code } = req.body;
+
+    // Only process successful payments
+    if (status_code === '2') { // Paid
+      const order = await Order.findById(order_id).populate<{ user: { email: string } }>('user', 'email');
+
+      if (order && order.user) {
+        await sendEmail(order.user.email, 'Order Paid', 'Your order has been paid successfully!');
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (error: any) {
+    console.error('Payment Notify Error:', error.message);
+    res.sendStatus(500);
+  }
+};

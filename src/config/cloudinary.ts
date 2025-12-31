@@ -9,5 +9,5 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// මෙය අනිවාර්යයෙන්ම තිබිය යුතුයි
+// Named export එකක් භාවිතා කරන්න
 export { cloudinary };
