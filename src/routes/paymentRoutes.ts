@@ -1,20 +1,12 @@
-import express from 'express';
-import { initiatePayment, notify } from '../controllers/paymentController';
+import { Router } from 'express';
+import { initiatePayment, paymentNotify } from '../controllers/paymentController';
 
-const router = express.Router();
+const router = Router();
 
-/**
- * Initiate PayHere payment (sandbox or live)
- * POST /api/payments/initiate
- * Body: { orderId: string, amount: number }
- */
+// Frontend එකෙන් Hash එක ඉල්ලන තැන
 router.post('/initiate', initiatePayment);
 
-/**
- * PayHere IPN / notification endpoint
- * POST /api/payments/notify
- * Body: { order_id: string, payhere_amount: string, status_code: string }
- */
-router.post('/notify', notify);
+// PayHere Server එකෙන් Payment status එක එවන තැන
+router.post('/notify', paymentNotify);
 
 export default router;
