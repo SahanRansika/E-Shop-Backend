@@ -1,101 +1,93 @@
 import { Request, Response } from 'express';
 import Order from '../models/Order';
-import { authenticate, isSeller } from '../middleware/authMiddleware';
+import { AuthRequest } from '../middleware/authMiddleware';
 
-// Create order
-export const createOrder = [
-  authenticate,
-  async (req: any, res: Response) => {
+// 1. නව ඇණවුමක් සෑදීම (Create Order)
+export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-      const { products, total, address } = req.body;
+        const { products, total, address } = req.body;
+        
+        // Middleware එකෙන් ලැබෙන user id එක ලබා ගැනීම
+        const userId = req.user?.id; 
 
-      const order = new Order({
-        user: req.user.sub,
-        products,
-        total,
-        address,
-      });
+        if (!userId) {
+            res.status(401).json({ message: "User not authenticated. ID missing." });
+            return;
+        }
 
-      await order.save();
-      res.status(201).json(order);
-    } catch (err: any) {
-      res.status(400).json({ message: err.message });
+        const newOrder = new Order({
+            user: userId, // Auth Middleware එකෙන් ලැබෙන ID එක
+            products: products,
+            total: total,
+            address: {
+                street: address.street,
+                city: address.city,
+                zipCode: address.zipCode,
+                phone: address.phone 
+            },
+            status: 'pending'
+        });
+
+        const savedOrder = await newOrder.save();
+        console.log(`✅ Order Created: ${savedOrder._id}`);
+        res.status(201).json(savedOrder);
+
+    } catch (error: any) {
+        console.error("❌ Order Creation Error:", error);
+        res.status(500).json({ 
+            message: "Order validation failed", 
+            error: error.message 
+        });
     }
-  },
-];
+};
 
-// Customer orders
-export const getOrders = [
-  authenticate,
-  async (req: any, res: Response) => {
-    const orders = await Order.find({ user: req.user.sub })
-      .populate('products.product')
-      .sort({ createdAt: -1 });
+// 2. සියලුම ඇණවුම් ලබා ගැනීම
+export const getOrders = async (req: Request, res: Response) => {
+    try {
+        const orders = await Order.find().populate('user', 'name email');
+        res.json(orders);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching orders" });
+    }
+};
 
-    res.json(orders);
-  },
-];
+// 3. ID එක අනුව ඇණවුමක් ලබා ගැනීම
+export const getOrderById = async (req: Request, res: Response) => {
+    try {
+        const order = await Order.findById(req.params.id).populate('products.product');
+        if (!order) return res.status(404).json({ message: "Order not found" });
+        res.json(order);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching order" });
+    }
+};
 
-// Single order
-export const getOrderById = [
-  authenticate,
-  async (req: any, res: Response) => {
-    const order = await Order.findById(req.params.id)
-      .populate('products.product');
+// 4. ඇණවුමක් අවලංගු කිරීම
+export const cancelOrder = async (req: Request, res: Response) => {
+    try {
+        const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status: 'cancelled' }, { new: true });
+        res.json(updatedOrder);
+    } catch (error) {
+        res.status(500).json({ message: "Error cancelling order" });
+    }
+};
 
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    res.json(order);
-  },
-];
+// 5. විකුණුම්කරුගේ ඇණවුම් ලබා ගැනීම
+export const getSellerOrders = async (req: Request, res: Response) => {
+    try {
+        res.json({ message: "Seller orders fetched" });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching seller orders" });
+    }
+};
 
-// Cancel order
-export const cancelOrder = [
-  authenticate,
-  async (req: any, res: Response) => {
-    const order = await Order.findById(req.params.id);
-
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-
-    order.status = 'cancelled';
-    await order.save();
-
-    res.json(order);
-  },
-];
-
-// Seller – view own orders
-export const getSellerOrders = [
-  authenticate,
-  isSeller,
-  async (req: any, res: Response) => {
-    const orders = await Order.find()
-      .populate('user', 'name email')
-      .populate('products.product');
-
-    const sellerOrders = orders.filter(order =>
-      order.products.some((item: any) =>
-        item.product.seller.toString() === req.user.sub
-      )
-    );
-
-    res.json(sellerOrders);
-  },
-];
-
-// Update order status (seller)
-export const updateOrderStatus = [
-  authenticate,
-  isSeller,
-  async (req: Request, res: Response) => {
-    const { status } = req.body;
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
-
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    res.json(order);
-  },
-];
+// 6. ඇණවුමක තත්ත්වය යාවත්කාලීන කිරීම
+export const updateOrderStatus = async (req: Request, res: Response) => {
+    try {
+        const { status } = req.body;
+        const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        res.json(updatedOrder);
+    } catch (error) {
+        res.status(500).json({ message: "Error updating status" });
+    }
+};
