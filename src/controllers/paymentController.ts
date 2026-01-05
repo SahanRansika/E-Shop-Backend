@@ -2,51 +2,39 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import Order from '../models/Order';
 
-// 1. පේමන්ට් එක ආරම්භ කර Hash එක සෑදීම
 export const initiatePayment = async (req: Request, res: Response) => {
   try {
     const { orderId, amount } = req.body;
     const merchant_id = process.env.PAYHERE_MERCHANT_ID;
     const merchant_secret = process.env.PAYHERE_MERCHANT_SECRET || "";
     const currency = 'LKR';
-    
-    // PayHere පද්ධතියට සැමවිටම දශමස්ථාන 2ක් සහිත අගයක් අවශ්‍ය වේ (උදා: 500.00)
+
+    // 1. Amount එක දශමස්ථාන 2කට හරියටම format කිරීම (උදා: 500.00)
     const formattedAmount = Number(amount).toFixed(2);
 
-    if (!merchant_id || !merchant_secret) {
-      console.error("❌ PayHere Credentials Missing");
-      return res.status(500).json({ message: 'PayHere credentials not configured' });
-    }
-
-    // STEP 1: Secret එක MD5 කර Uppercase කරන්න
+    // 2. Secret එක MD5 කර Uppercase කිරීම
     const hashedSecret = crypto
       .createHash('md5')
       .update(merchant_secret.trim())
       .digest('hex')
       .toUpperCase();
 
-    // STEP 2: Initiate කිරීමට අවශ්‍ය Hash එක සෑදීම
+    // 3. Hash එක සෑදීම (පෙළගැස්ම ඉතා වැදගත්)
     const hash = crypto
       .createHash('md5')
       .update(merchant_id + orderId + formattedAmount + currency + hashedSecret)
       .digest('hex')
       .toUpperCase();
 
-    console.log(`✅ Hash Created for Order: ${orderId}`);
-
     return res.status(200).json({
       merchant_id,
       order_id: orderId,
-      amount: formattedAmount,
+      amount: formattedAmount, // මෙම අගයම Frontend එකේ භාවිතා කළ යුතුය
       currency,
-      hash,
-      return_url: process.env.PAYHERE_RETURN_URL,
-      cancel_url: process.env.PAYHERE_CANCEL_URL,
-      notify_url: process.env.PAYHERE_NOTIFY_URL,
+      hash
     });
   } catch (error) {
-    console.error("🔥 Initiate Error:", error);
-    res.status(500).json({ message: 'Failed to initiate payment' });
+    res.status(500).json({ message: 'Hash generation failed' });
   }
 };
 
