@@ -8,6 +8,6 @@ const productSchema = new mongoose.Schema({
   category: { type: String, required: true },
   stock: { type: Number, default: 0 },
   seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
-}, { timestamps: true }); // timestamps දැමීමෙන් නිර්මාණය කළ දිනය බලාගත හැක
+}, { timestamps: true });
 
 export default mongoose.model('Product', productSchema);

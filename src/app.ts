@@ -7,33 +7,31 @@ import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
 import cartRoutes from './routes/cartRoutes';
 import paymentRoutes from './routes/paymentRoutes';
+import userRoutes from './routes/userRoutes';
 
 import errorHandler from './middleware/errorHandler';
-import './config/database'; // DB connect
+import './config/database'; 
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-/**
- * 🔐 CORS Configuration
- * - PayHere notify_url → no CORS needed (server-to-server)
- * - Frontend (Vite) → allow origin
- */
+// 🔐 CORS Configuration
 app.use(
   cors({
     origin: [
-      'http://localhost:5173', // Vite frontend
-      'http://localhost:3000', // React (optional)
+      'http://localhost:5173', 
+      'http://localhost:3000',
     ],
     credentials: true,
   })
 );
 
 /**
- * 🔥 Body parsers (REQUIRED for PayHere notify)
+ * 🔥 Body parsers
+ * PayHere notify_url එකෙන් එන්නේ x-www-form-urlencoded දත්ත බැවින් 
+ * extended: true තිබීම අනිවාර්ය වේ.
  */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -41,27 +39,26 @@ app.use(express.urlencoded({ extended: true }));
 /**
  * ✅ API Routes
  */
+// Payment routes මුලින්ම තැබීම ආරක්ෂිතයි (Public Access සඳහා)
+app.use('/api/payments', paymentRoutes); 
+
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/payment', paymentRoutes);
+app.use('/api/users', userRoutes);
 
 /**
  * 🩺 Health Check
  */
 app.get('/api/health', (_req, res) => {
-  res.status(200).send('OK');
+  res.status(200).send('Backend is running smoothly!');
 });
 
-/**
- * ❌ Global Error Handler
- */
+// ❌ Global Error Handler
 app.use(errorHandler);
 
-/**
- * 🚀 Start Server
- */
+// 🚀 Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

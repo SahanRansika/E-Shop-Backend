@@ -2,49 +2,38 @@ import { Request, Response } from 'express';
 import Order from '../models/Order';
 import { AuthRequest } from '../middleware/authMiddleware';
 
-// 1. නව ඇණවුමක් සෑදීම (Create Order)
+// 1. නව ඇණවුමක් සෑදීම
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { products, total, address } = req.body;
-        
-        // Middleware එකෙන් ලැබෙන user id එක ලබා ගැනීම
         const userId = req.user?.id; 
 
         if (!userId) {
-            res.status(401).json({ message: "User not authenticated. ID missing." });
+            res.status(401).json({ message: "User not authenticated." });
             return;
         }
 
         const newOrder = new Order({
-            user: userId, // Auth Middleware එකෙන් ලැබෙන ID එක
+            user: userId,
             products: products,
             total: total,
-            address: {
-                street: address.street,
-                city: address.city,
-                zipCode: address.zipCode,
-                phone: address.phone 
-            },
+            address: address,
             status: 'pending'
         });
 
         const savedOrder = await newOrder.save();
-        console.log(`✅ Order Created: ${savedOrder._id}`);
         res.status(201).json(savedOrder);
-
     } catch (error: any) {
-        console.error("❌ Order Creation Error:", error);
-        res.status(500).json({ 
-            message: "Order validation failed", 
-            error: error.message 
-        });
+        res.status(500).json({ message: "Order creation failed", error: error.message });
     }
 };
 
-// 2. සියලුම ඇණවුම් ලබා ගැනීම
-export const getOrders = async (req: Request, res: Response) => {
+// 2. සියලුම ඇණවුම් ලබා ගැනීම (Admin හෝ User සඳහා)
+export const getOrders = async (req: AuthRequest, res: Response) => {
     try {
-        const orders = await Order.find().populate('user', 'name email');
+        // User ලොග් වී ඇත්නම් ඔහුට අදාළ ඒවා පමණක් පෙන්වීමට:
+        const filter = req.user?.roles?.includes('admin') ? {} : { user: req.user?.id };
+        const orders = await Order.find(filter).populate('user', 'name email').sort({ createdAt: -1 });
         res.json(orders);
     } catch (error) {
         res.status(500).json({ message: "Error fetching orders" });
@@ -54,7 +43,10 @@ export const getOrders = async (req: Request, res: Response) => {
 // 3. ID එක අනුව ඇණවුමක් ලබා ගැනීම
 export const getOrderById = async (req: Request, res: Response) => {
     try {
-        const order = await Order.findById(req.params.id).populate('products.product');
+        const order = await Order.findById(req.params.id)
+            .populate('user', 'name email')
+            .populate('products.product');
+        
         if (!order) return res.status(404).json({ message: "Order not found" });
         res.json(order);
     } catch (error) {
@@ -72,23 +64,48 @@ export const cancelOrder = async (req: Request, res: Response) => {
     }
 };
 
-// 5. විකුණුම්කරුගේ ඇණවුම් ලබා ගැනීම
-export const getSellerOrders = async (req: Request, res: Response) => {
+// 5. 🔥 විකුණුම්කරුගේ (Seller) ඇණවුම් ලබා ගැනීම
+export const getSellerOrders = async (req: AuthRequest, res: Response) => {
     try {
-        res.json({ message: "Seller orders fetched" });
-    } catch (error) {
+        const sellerId = req.user?.id;
+
+        // සියලුම ඇණවුම් ගෙන නිෂ්පාදන වල Seller ID එක සමඟ සසඳා filter කිරීම
+        const allOrders = await Order.find()
+            .populate('user', 'name email')
+            .populate('products.product')
+            .sort({ createdAt: -1 });
+
+        const sellerOrders = allOrders.filter(order => 
+            order.products.some((item: any) => 
+                item.product && item.product.seller && item.product.seller.toString() === sellerId
+            )
+        );
+
+        res.status(200).json(sellerOrders);
+    } catch (error: any) {
+        console.error("Seller Order Error:", error);
         res.status(500).json({ message: "Error fetching seller orders" });
     }
 };
 
-// 6. ඇණවුමක තත්ත්වය යාවත්කාලීන කිරීම
+// 6. ඇණවුමක තත්ත්වය (Status) යාවත්කාලීන කිරීම
 export const updateOrderStatus = async (req: Request, res: Response) => {
     try {
         const { status } = req.body;
-        const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        // වලංගු status වර්ග පමණක් ඇතුළත් කිරීමට වගබලා ගන්න
+        const validStatuses = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
+        
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ message: "Invalid status value" });
+        }
+
+        const updatedOrder = await Order.findByIdAndUpdate(
+            req.params.id, 
+            { status }, 
+            { new: true }
+        );
         res.json(updatedOrder);
     } catch (error) {
         res.status(500).json({ message: "Error updating status" });
     }
 };
-

@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import Order from '../models/Order';
+import Payment from '../models/Payment'; // අලුතින් සෑදූ Payment model එක
 
+/**
+ * 1. PayHere වෙත යැවීමට අවශ්‍ය Hash එක සහ දත්ත සකස් කිරීම
+ */
 export const initiatePayment = async (req: Request, res: Response) => {
   try {
     const { orderId, amount } = req.body;
@@ -9,17 +13,17 @@ export const initiatePayment = async (req: Request, res: Response) => {
     const merchant_secret = process.env.PAYHERE_MERCHANT_SECRET || "";
     const currency = 'LKR';
 
-    // 1. Amount එක දශමස්ථාන 2කට හරියටම format කිරීම (උදා: 500.00)
+    // Amount එක හරියටම දශමස්ථාන 2කට format කිරීම (PayHere අනිවාර්ය අවශ්‍යතාවයකි)
     const formattedAmount = Number(amount).toFixed(2);
 
-    // 2. Secret එක MD5 කර Uppercase කිරීම
+    // Merchant Secret එක MD5 කර Uppercase කිරීම
     const hashedSecret = crypto
       .createHash('md5')
       .update(merchant_secret.trim())
       .digest('hex')
       .toUpperCase();
 
-    // 3. Hash එක සෑදීම (පෙළගැස්ම ඉතා වැදගත්)
+    // Hash එක සෑදීම: merchant_id + order_id + amount + currency + hashedSecret
     const hash = crypto
       .createHash('md5')
       .update(merchant_id + orderId + formattedAmount + currency + hashedSecret)
@@ -29,16 +33,20 @@ export const initiatePayment = async (req: Request, res: Response) => {
     return res.status(200).json({
       merchant_id,
       order_id: orderId,
-      amount: formattedAmount, // මෙම අගයම Frontend එකේ භාවිතා කළ යුතුය
+      amount: formattedAmount,
       currency,
-      hash
+      hash,
+      notify_url: process.env.PAYHERE_NOTIFY_URL // .env එකෙන් ලබා ගනී
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Hash Error:", error);
     res.status(500).json({ message: 'Hash generation failed' });
   }
 };
 
-// 2. PayHere Notification එක ලැබුණු විට Database Update කිරීම
+/**
+ * 2. PayHere Server එකෙන් එන Notification (IPN) එක ලබාගෙන DB Update කිරීම
+ */
 export const paymentNotify = async (req: Request, res: Response) => {
   console.log("🔔 PayHere Notification Received!");
   
@@ -49,7 +57,10 @@ export const paymentNotify = async (req: Request, res: Response) => {
       status_code, 
       md5sig, 
       payhere_amount, 
-      payhere_currency 
+      payhere_currency,
+      payment_id, // PayHere Reference ID
+      method,     // Visa, Master, etc.
+      status_message
     } = req.body;
 
     const merchant_secret = (process.env.PAYHERE_MERCHANT_SECRET || "").trim();
@@ -61,7 +72,7 @@ export const paymentNotify = async (req: Request, res: Response) => {
       .digest('hex')
       .toUpperCase();
 
-    // Verification Step 2: ලැබුණු දත්ත වලින් Hash එක සාදා MD5Sig සමඟ සැසඳීම
+    // Verification Step 2: ලැබුණු දත්ත වලින් නැවත Hash එකක් සාදා md5sig සමඟ සැසඳීම
     const expectedMd5sig = crypto
       .createHash('md5')
       .update(
@@ -75,24 +86,47 @@ export const paymentNotify = async (req: Request, res: Response) => {
       .digest('hex')
       .toUpperCase();
 
+    // ආරක්ෂිත බව තහවුරු කිරීම
     if (md5sig === expectedMd5sig) {
       if (status_code === "2") {
         console.log(`✅ Success: Order ${order_id} is PAID`);
-        await Order.findByIdAndUpdate(order_id, { status: "paid" });
-        console.log("🚀 Database Updated: Status -> PAID");
-      } else {
-        console.log(`⚠️ Payment Status: ${status_code}`);
-        // Status -2 නම් අසාර්ථක වූ බව සටහන් කරන්න
-        await Order.findByIdAndUpdate(order_id, { status: "failed" });
+
+        // 1. Order status එක 'paid' ලෙස සහ Payment ID එක Update කරන්න
+        await Order.findByIdAndUpdate(order_id, { 
+          status: "paid",
+          paymentId: payment_id 
+        });
+
+        // 2. අලුත් Payment Table එකට විස්තර ඇතුළත් කරන්න
+        const newPayment = new Payment({
+          orderId: order_id,
+          paymentId: payment_id,
+          amount: Number(payhere_amount),
+          currency: payhere_currency,
+          status: 'success',
+          method: method,
+          rawPayHereResponse: req.body // සම්පූර්ණ response එක backup එකක් ලෙස
+        });
+        await newPayment.save();
+
+        console.log("🚀 Database Updated: Order -> PAID & Payment Record Created");
+      } 
+      else if (status_code === "0") {
+        console.log(`⏳ Pending: Order ${order_id} is awaiting confirmation`);
+      } 
+      else {
+        console.log(`⚠️ Failed: Order ${order_id} Status ${status_code}`);
+        await Order.findByIdAndUpdate(order_id, { status: "cancelled" });
       }
     } else {
-      console.log("❌ Hash Mismatch! Security Violation.");
+      console.error("❌ Security Warning: Hash Mismatch! Request might not be from PayHere.");
     }
 
-    // PayHere වෙත 200 OK එකක් යැවීම අනිවාර්ය වේ
-    res.status(200).send(); 
-  } catch (error) {
-    console.error("🔥 Notify Error:", error);
+    // PayHere වෙත සැමවිටම 200 OK එකක් යැවිය යුතුය
+    res.status(200).send("OK"); 
+
+  } catch (error: any) {
+    console.error("🔥 PayHere Notify Error:", error);
     res.status(500).send();
   }
 };
